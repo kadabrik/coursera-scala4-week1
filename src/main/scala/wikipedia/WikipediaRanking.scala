@@ -22,6 +22,8 @@ object WikipediaRanking {
   // Hint: use a combination of `sc.textFile`, `WikipediaData.filePath` and `WikipediaData.parse`
   val wikiRdd: RDD[WikipediaArticle] = sc.textFile(WikipediaData.filePath).map(WikipediaData.parse).persist()
 
+  def isWordMentioned(word: String, text: String): Boolean = text.split(" ").toSet.contains(word)
+
   /** Returns the number of articles on which the language `lang` occurs.
    *  Hint1: consider using method `aggregate` on RDD[T].
    *  Hint2: should you count the "Java" language when you see "JavaScript"?
@@ -30,7 +32,7 @@ object WikipediaRanking {
    */
   def occurrencesOfLang(lang: String, rdd: RDD[WikipediaArticle]): Int = {
     rdd.aggregate(0)(
-      (count, article) => count + article.text.split(" ").toSet.contains(lang),
+      (count, article) => count + isWordMentioned(lang, article.text),
       _ + _
     )
   }
@@ -51,13 +53,8 @@ object WikipediaRanking {
    * to the Wikipedia pages in which it occurs.
    */
   def makeIndex(langs: List[String], rdd: RDD[WikipediaArticle]): RDD[(String, Iterable[WikipediaArticle])] = {
-    rdd.flatMap(article => {
-      for {
-        lang <- langs
-        if article.text.split(" ").toSet.contains(lang)
-      } yield (lang, article)
-    }
-    ).groupByKey()
+    rdd.flatMap(article => langs.filter(isWordMentioned(_, article.text)).map((_, article)))
+      .groupByKey()
   }
 
   /* (2) Compute the language ranking again, but now using the inverted index. Can you notice
@@ -77,7 +74,10 @@ object WikipediaRanking {
    *   Note: this operation is long-running. It can potentially run for
    *   several seconds.
    */
-  def rankLangsReduceByKey(langs: List[String], rdd: RDD[WikipediaArticle]): List[(String, Int)] = ???
+  def rankLangsReduceByKey(langs: List[String], rdd: RDD[WikipediaArticle]): List[(String, Int)] = {
+    rdd.flatMap(article => langs.filter(isWordMentioned(_, article.text)).map((_, 1)))
+      .reduceByKey(_ + _).sortBy(_._2, ascending = false).collect().toList
+  }
 
   def main(args: Array[String]) {
 
